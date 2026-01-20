@@ -99,6 +99,7 @@ void AddKingMoves(const Board& board, std::vector<Move>& moves, int from, char s
 void AddPawnMoves(const Board& board, std::vector<Move>& moves, int from, char side) {
     int file = from % 8;
     int rank = from / 8;
+    int ep_square = board.EnPassantSquare();
     if (side == 'w') {
         int forward = from + 8;
         if (rank < 7 && board.PieceAt(forward) == '.') {
@@ -141,6 +142,14 @@ void AddPawnMoves(const Board& board, std::vector<Move>& moves, int from, char s
                 } else {
                     AddMove(moves, from, capture_right);
                 }
+            }
+        }
+        if (rank == 4) {
+            if (file > 0 && ep_square == from + 7 && board.PieceAt(from - 1) == 'p') {
+                AddMove(moves, from, from + 7);
+            }
+            if (file < 7 && ep_square == from + 9 && board.PieceAt(from + 1) == 'p') {
+                AddMove(moves, from, from + 9);
             }
         }
     } else {
@@ -187,6 +196,14 @@ void AddPawnMoves(const Board& board, std::vector<Move>& moves, int from, char s
                 }
             }
         }
+        if (rank == 3) {
+            if (file > 0 && ep_square == from - 9 && board.PieceAt(from - 1) == 'P') {
+                AddMove(moves, from, from - 9);
+            }
+            if (file < 7 && ep_square == from - 7 && board.PieceAt(from + 1) == 'P') {
+                AddMove(moves, from, from - 7);
+            }
+        }
     }
 }
 
@@ -212,37 +229,165 @@ int FindKingSquare(const Board& board, Color color) {
     return -1;
 }
 
-struct UndoMove {
-    int from;
-    int to;
-    char moved;
-    char captured;
-    char side_to_move;
-};
+void RemoveCastlingRight(std::string& rights, char right) {
+    if (rights == "-") {
+        rights.clear();
+    }
+    auto pos = rights.find(right);
+    if (pos != std::string::npos) {
+        rights.erase(pos, 1);
+    }
+    if (rights.empty()) {
+        rights = "-";
+    }
+}
 
-UndoMove ApplyMove(Board& board, const Move& move) {
+}  // namespace
+
+MoveUndo ApplyMove(Board& board, const Move& move) {
     int from = move.from();
     int to = move.to();
     char moved = board.PieceAt(from);
     char captured = board.PieceAt(to);
     char side = board.SideToMove();
+    int prev_ep = board.EnPassantSquare();
+    std::string prev_castling = board.CastlingRights();
+    int ep_capture_square = -1;
+    char ep_captured = '.';
+    bool was_en_passant = false;
+    int rook_from = -1;
+    int rook_to = -1;
+    char rook_piece = '.';
+    bool was_castling = false;
+
+    board.SetEnPassantSquare(-1);
+
+    if ((moved == 'P' || moved == 'p') && to == prev_ep && captured == '.') {
+        was_en_passant = true;
+        ep_capture_square = side == 'w' ? to - 8 : to + 8;
+        ep_captured = board.PieceAt(ep_capture_square);
+        board.SetPieceAt(ep_capture_square, '.');
+    }
+
+    char placed = moved;
     if (move.promotion().has_value()) {
         char promo = move.promotion().value();
-        char promoted_piece = side == 'w' ? static_cast<char>(promo - ('a' - 'A')) : promo;
-        board.SetPieceAt(to, promoted_piece);
-    } else {
-        board.SetPieceAt(to, moved);
+        placed = side == 'w' ? static_cast<char>(promo - ('a' - 'A')) : promo;
     }
+
+    board.SetPieceAt(to, placed);
     board.SetPieceAt(from, '.');
-    return {from, to, moved, captured, side};
+
+    if ((moved == 'K' && from == 4) || (moved == 'k' && from == 60)) {
+        std::string rights = board.CastlingRights();
+        if (moved == 'K') {
+            RemoveCastlingRight(rights, 'K');
+            RemoveCastlingRight(rights, 'Q');
+        } else {
+            RemoveCastlingRight(rights, 'k');
+            RemoveCastlingRight(rights, 'q');
+        }
+        board.SetCastlingRights(rights);
+    }
+
+    if (moved == 'R') {
+        std::string rights = board.CastlingRights();
+        if (from == 0) {
+            RemoveCastlingRight(rights, 'Q');
+        } else if (from == 7) {
+            RemoveCastlingRight(rights, 'K');
+        }
+        board.SetCastlingRights(rights);
+    } else if (moved == 'r') {
+        std::string rights = board.CastlingRights();
+        if (from == 56) {
+            RemoveCastlingRight(rights, 'q');
+        } else if (from == 63) {
+            RemoveCastlingRight(rights, 'k');
+        }
+        board.SetCastlingRights(rights);
+    }
+
+    if (captured == 'R') {
+        std::string rights = board.CastlingRights();
+        if (to == 0) {
+            RemoveCastlingRight(rights, 'Q');
+        } else if (to == 7) {
+            RemoveCastlingRight(rights, 'K');
+        }
+        board.SetCastlingRights(rights);
+    } else if (captured == 'r') {
+        std::string rights = board.CastlingRights();
+        if (to == 56) {
+            RemoveCastlingRight(rights, 'q');
+        } else if (to == 63) {
+            RemoveCastlingRight(rights, 'k');
+        }
+        board.SetCastlingRights(rights);
+    }
+
+    if ((moved == 'K' || moved == 'k') && (to - from == 2 || from - to == 2)) {
+        was_castling = true;
+        if (moved == 'K') {
+            if (to == 6) {
+                rook_from = 7;
+                rook_to = 5;
+            } else if (to == 2) {
+                rook_from = 0;
+                rook_to = 3;
+            }
+        } else {
+            if (to == 62) {
+                rook_from = 63;
+                rook_to = 61;
+            } else if (to == 58) {
+                rook_from = 56;
+                rook_to = 59;
+            }
+        }
+        if (rook_from >= 0 && rook_to >= 0) {
+            rook_piece = board.PieceAt(rook_from);
+            board.SetPieceAt(rook_to, rook_piece);
+            board.SetPieceAt(rook_from, '.');
+        }
+    }
+
+    if (moved == 'P' && to - from == 16) {
+        board.SetEnPassantSquare(from + 8);
+    } else if (moved == 'p' && from - to == 16) {
+        board.SetEnPassantSquare(from - 8);
+    }
+
+    return {from,
+            to,
+            moved,
+            captured,
+            side,
+            prev_ep,
+            ep_capture_square,
+            ep_captured,
+            was_en_passant,
+            rook_from,
+            rook_to,
+            rook_piece,
+            was_castling,
+            prev_castling};
 }
 
-void UndoMoveApply(Board& board, const UndoMove& undo) {
+void UndoMoveApply(Board& board, const MoveUndo& undo) {
     board.SetPieceAt(undo.from, undo.moved);
     board.SetPieceAt(undo.to, undo.captured);
+    if (undo.was_en_passant && undo.ep_capture_square >= 0) {
+        board.SetPieceAt(undo.ep_capture_square, undo.ep_captured);
+    }
+    if (undo.was_castling && undo.rook_from >= 0 && undo.rook_to >= 0) {
+        board.SetPieceAt(undo.rook_from, undo.rook_piece);
+        board.SetPieceAt(undo.rook_to, '.');
+    }
     board.SetSideToMove(undo.side_to_move);
+    board.SetEnPassantSquare(undo.prev_en_passant);
+    board.SetCastlingRights(undo.prev_castling_rights);
 }
-}  // namespace
 
 bool IsSquareAttacked(const Board& board, int square, Color byColor) {
     if (square < 0 || square > 63) {
@@ -346,6 +491,46 @@ bool InCheck(const Board& board, Color color) {
     return IsSquareAttacked(board, king_square, Opposite(color));
 }
 
+void AddCastlingMoves(const Board& board, std::vector<Move>& moves, char side) {
+    Color color = ColorFromSide(side);
+    if (InCheck(board, color)) {
+        return;
+    }
+
+    const std::string& rights = board.CastlingRights();
+    if (side == 'w') {
+        if (rights.find('K') != std::string::npos) {
+            if (board.PieceAt(5) == '.' && board.PieceAt(6) == '.' &&
+                !IsSquareAttacked(board, 5, Color::Black) &&
+                !IsSquareAttacked(board, 6, Color::Black)) {
+                AddMove(moves, 4, 6);
+            }
+        }
+        if (rights.find('Q') != std::string::npos) {
+            if (board.PieceAt(1) == '.' && board.PieceAt(2) == '.' && board.PieceAt(3) == '.' &&
+                !IsSquareAttacked(board, 3, Color::Black) &&
+                !IsSquareAttacked(board, 2, Color::Black)) {
+                AddMove(moves, 4, 2);
+            }
+        }
+    } else {
+        if (rights.find('k') != std::string::npos) {
+            if (board.PieceAt(61) == '.' && board.PieceAt(62) == '.' &&
+                !IsSquareAttacked(board, 61, Color::White) &&
+                !IsSquareAttacked(board, 62, Color::White)) {
+                AddMove(moves, 60, 62);
+            }
+        }
+        if (rights.find('q') != std::string::npos) {
+            if (board.PieceAt(57) == '.' && board.PieceAt(58) == '.' && board.PieceAt(59) == '.' &&
+                !IsSquareAttacked(board, 59, Color::White) &&
+                !IsSquareAttacked(board, 58, Color::White)) {
+                AddMove(moves, 60, 58);
+            }
+        }
+    }
+}
+
 std::vector<Move> GeneratePseudoLegalMoves(const Board& board) {
     std::vector<Move> moves;
     char side = board.SideToMove();
@@ -392,6 +577,7 @@ std::vector<Move> GeneratePseudoLegalMoves(const Board& board) {
             case 'K':
             case 'k':
                 AddKingMoves(board, moves, index, side);
+                AddCastlingMoves(board, moves, side);
                 break;
             default:
                 break;
@@ -410,7 +596,7 @@ std::vector<Move> GenerateLegalMoves(const Board& board) {
         if (target == (side == Color::White ? 'k' : 'K')) {
             continue;
         }
-        UndoMove undo = ApplyMove(scratch, move);
+        MoveUndo undo = ApplyMove(scratch, move);
         if (!InCheck(scratch, side)) {
             legal.push_back(move);
         }
@@ -428,7 +614,7 @@ uint64_t Perft(const Board& board, int depth) {
     auto moves = GenerateLegalMoves(board);
     Board scratch = board;
     for (const auto& move : moves) {
-        UndoMove undo = ApplyMove(scratch, move);
+        MoveUndo undo = ApplyMove(scratch, move);
         char next_side = undo.side_to_move == 'w' ? 'b' : 'w';
         scratch.SetSideToMove(next_side);
         nodes += Perft(scratch, depth - 1);

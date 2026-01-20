@@ -15,6 +15,10 @@ public:
     char SideToMove() const;
     void SetPieceAt(int index, char piece);
     void SetSideToMove(char side);
+    int EnPassantSquare() const;
+    void SetEnPassantSquare(int square);
+    const std::string& CastlingRights() const;
+    void SetCastlingRights(const std::string& rights);
 
 private:
     std::array<char, 64> squares_;

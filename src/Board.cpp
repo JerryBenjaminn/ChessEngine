@@ -187,3 +187,26 @@ void Board::SetSideToMove(char side) {
         side_to_move_ = side;
     }
 }
+
+int Board::EnPassantSquare() const {
+    return en_passant_square_;
+}
+
+void Board::SetEnPassantSquare(int square) {
+    if (square < -1 || square > 63) {
+        return;
+    }
+    en_passant_square_ = square;
+}
+
+const std::string& Board::CastlingRights() const {
+    return castling_rights_;
+}
+
+void Board::SetCastlingRights(const std::string& rights) {
+    if (rights.empty()) {
+        castling_rights_ = "-";
+    } else {
+        castling_rights_ = rights;
+    }
+}

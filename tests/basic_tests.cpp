@@ -203,5 +203,114 @@ int main() {
     assert(Perft(promo_quiet_board, 1) == 4);
     assert(Perft(promo_quiet_board, 2) == 76);
 
+    const std::string ep_fen = "4k3/8/8/3pP3/8/8/8/4K3 w - d6 0 1";
+    Board ep_board;
+    assert(ep_board.LoadFen(ep_fen));
+    auto ep_moves = GenerateLegalMoves(ep_board);
+    bool has_ep = false;
+    Move ep_move(0, 0);
+    for (const auto& m : ep_moves) {
+        if (m.ToUci() == "e5d6") {
+            has_ep = true;
+            ep_move = m;
+            break;
+        }
+    }
+    assert(has_ep);
+
+    MoveUndo ep_undo = ApplyMove(ep_board, ep_move);
+    int d5 = SquareFromString("d5").value();
+    int e5_ep = SquareFromString("e5").value();
+    int d6 = SquareFromString("d6").value();
+    assert(ep_board.PieceAt(d5) == '.');
+    assert(ep_board.PieceAt(e5_ep) == '.');
+    assert(ep_board.PieceAt(d6) == 'P');
+    UndoMoveApply(ep_board, ep_undo);
+    assert(ep_board.PieceAt(d5) == 'p');
+    assert(ep_board.PieceAt(e5_ep) == 'P');
+    assert(ep_board.PieceAt(d6) == '.');
+
+    const std::string ep_illegal_fen = "k3r3/8/8/3pP3/8/8/8/4K3 w - d6 0 1";
+    Board ep_illegal_board;
+    assert(ep_illegal_board.LoadFen(ep_illegal_fen));
+    auto ep_illegal_moves = GenerateLegalMoves(ep_illegal_board);
+    bool has_illegal_ep = false;
+    for (const auto& m : ep_illegal_moves) {
+        if (m.ToUci() == "e5d6") {
+            has_illegal_ep = true;
+            break;
+        }
+    }
+    assert(!has_illegal_ep);
+
+    assert(Perft(ep_board, 1) == 7);
+    assert(Perft(ep_board, 2) == 38);
+
+    const std::string castle_fen = "4k3/8/8/8/8/8/8/R3K2R w KQ - 0 1";
+    Board castle_board;
+    assert(castle_board.LoadFen(castle_fen));
+    auto castle_moves = GenerateLegalMoves(castle_board);
+    bool has_ks = false;
+    bool has_qs = false;
+    for (const auto& m : castle_moves) {
+        if (m.ToUci() == "e1g1") {
+            has_ks = true;
+        } else if (m.ToUci() == "e1c1") {
+            has_qs = true;
+        }
+    }
+    assert(has_ks);
+    assert(has_qs);
+
+    const std::string castle_in_check_fen = "4k3/8/8/8/8/8/4r3/R3K2R w KQ - 0 1";
+    Board castle_in_check_board;
+    assert(castle_in_check_board.LoadFen(castle_in_check_fen));
+    auto castle_in_check_moves = GenerateLegalMoves(castle_in_check_board);
+    for (const auto& m : castle_in_check_moves) {
+        assert(m.ToUci() != "e1g1");
+        assert(m.ToUci() != "e1c1");
+    }
+
+    const std::string castle_attack_fen = "4k3/8/8/8/2b5/8/8/R3K2R w KQ - 0 1";
+    Board castle_attack_board;
+    assert(castle_attack_board.LoadFen(castle_attack_fen));
+    auto castle_attack_moves = GenerateLegalMoves(castle_attack_board);
+    bool has_attack_ks = false;
+    bool has_attack_qs = false;
+    for (const auto& m : castle_attack_moves) {
+        if (m.ToUci() == "e1g1") {
+            has_attack_ks = true;
+        } else if (m.ToUci() == "e1c1") {
+            has_attack_qs = true;
+        }
+    }
+    assert(!has_attack_ks);
+    assert(has_attack_qs);
+
+    Move castle_move(0, 0);
+    for (const auto& m : castle_moves) {
+        if (m.ToUci() == "e1g1") {
+            castle_move = m;
+            break;
+        }
+    }
+    MoveUndo castle_undo = ApplyMove(castle_board, castle_move);
+    int g1_castle = SquareFromString("g1").value();
+    int f1_castle = SquareFromString("f1").value();
+    int h1_castle = SquareFromString("h1").value();
+    int e1_castle = SquareFromString("e1").value();
+    assert(castle_board.PieceAt(g1_castle) == 'K');
+    assert(castle_board.PieceAt(f1_castle) == 'R');
+    assert(castle_board.PieceAt(h1_castle) == '.');
+    assert(castle_board.PieceAt(e1_castle) == '.');
+    UndoMoveApply(castle_board, castle_undo);
+    assert(castle_board.PieceAt(e1_castle) == 'K');
+    assert(castle_board.PieceAt(h1_castle) == 'R');
+    assert(castle_board.PieceAt(f1_castle) == '.');
+    assert(castle_board.PieceAt(g1_castle) == '.');
+
+    assert(Perft(castle_board, 1) == 26);
+    assert(Perft(castle_board, 2) == 112);
+
     return 0;
 }
