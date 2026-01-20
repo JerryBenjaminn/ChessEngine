@@ -1,3 +1,4 @@
+#include <chrono>
 #include <iostream>
 #include <string>
 
@@ -76,8 +77,13 @@ int main() {
             }
         } else {
             Move best(0, 0);
-            SearchBestMove(board, 3, best);
-            std::cout << "AI plays: " << best.ToUci() << '\n';
+            int depth_reached = 0;
+            uint64_t nodes = 0;
+            uint64_t qnodes = 0;
+            auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(300);
+            int score = SearchBestMoveTimed(board, 3, deadline, best, depth_reached, nodes, qnodes);
+            std::cout << "AI plays: " << best.ToUci() << " (depth " << depth_reached << ", score "
+                      << score << ", nodes " << nodes << ", qnodes " << qnodes << ")\n";
             MoveUndo undo = ApplyMove(board, best);
             board.SetSideToMove(undo.side_to_move == 'w' ? 'b' : 'w');
         }

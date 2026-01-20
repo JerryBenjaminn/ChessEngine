@@ -5,6 +5,12 @@
 #include "MoveGen.h"
 
 namespace {
+const int kCheckmateScore = 100000;
+const int kTimeOutScore = 200000;
+
+bool TimeUp(std::chrono::steady_clock::time_point deadline) {
+    return std::chrono::steady_clock::now() >= deadline;
+}
 const int kPawnTable[64] = {
     0,   0,   0,   0,   0,   0,   0,   0,
     5,  10,  10, -20, -20,  10,  10,   5,
@@ -156,15 +162,80 @@ int Evaluate(const Board& board) {
     return board.SideToMove() == 'w' ? score : -score;
 }
 
-int Negamax(Board& board, int depth, int alpha, int beta) {
+bool IsCaptureMove(const Board& board, const Move& move) {
+    int to = move.to();
+    char target = board.PieceAt(to);
+    if (target != '.') {
+        return true;
+    }
+    char moved = board.PieceAt(move.from());
+    if ((moved == 'P' || moved == 'p') && to == board.EnPassantSquare()) {
+        return true;
+    }
+    return false;
+}
+
+int Quiescence(Board& board,
+               int alpha,
+               int beta,
+               std::chrono::steady_clock::time_point deadline,
+               uint64_t& qnodes) {
+    if (TimeUp(deadline)) {
+        return kTimeOutScore;
+    }
+
+    qnodes += 1;
+    int stand_pat = Evaluate(board);
+    if (stand_pat >= beta) {
+        return beta;
+    }
+    if (stand_pat > alpha) {
+        alpha = stand_pat;
+    }
+
+    auto moves = GenerateLegalMoves(board);
+    for (const auto& move : moves) {
+        if (!IsCaptureMove(board, move)) {
+            continue;
+        }
+        MoveUndo undo = ApplyMove(board, move);
+        board.SetSideToMove(undo.side_to_move == 'w' ? 'b' : 'w');
+        int score = -Quiescence(board, -beta, -alpha, deadline, qnodes);
+        UndoMoveApply(board, undo);
+
+        if (score == -kTimeOutScore) {
+            return kTimeOutScore;
+        }
+        if (score >= beta) {
+            return beta;
+        }
+        if (score > alpha) {
+            alpha = score;
+        }
+    }
+
+    return alpha;
+}
+
+int Negamax(Board& board,
+            int depth,
+            int alpha,
+            int beta,
+            std::chrono::steady_clock::time_point deadline,
+            uint64_t& nodes,
+            uint64_t& qnodes) {
+    if (TimeUp(deadline)) {
+        return kTimeOutScore;
+    }
     if (depth == 0) {
-        return Evaluate(board);
+        nodes += 1;
+        return Quiescence(board, alpha, beta, deadline, qnodes);
     }
 
     auto moves = GenerateLegalMoves(board);
     if (moves.empty()) {
         if (InCheck(board, board.SideToMove() == 'w' ? Color::White : Color::Black)) {
-            return -100000 + (3 - depth);
+            return -kCheckmateScore + depth;
         }
         return 0;
     }
@@ -173,9 +244,12 @@ int Negamax(Board& board, int depth, int alpha, int beta) {
     for (const auto& move : moves) {
         MoveUndo undo = ApplyMove(board, move);
         board.SetSideToMove(undo.side_to_move == 'w' ? 'b' : 'w');
-        int score = -Negamax(board, depth - 1, -beta, -alpha);
+        int score = -Negamax(board, depth - 1, -beta, -alpha, deadline, nodes, qnodes);
         UndoMoveApply(board, undo);
 
+        if (score == -kTimeOutScore) {
+            return kTimeOutScore;
+        }
         if (score > best) {
             best = score;
         }
@@ -209,7 +283,15 @@ int SearchBestMove(Board& board, int depth, Move& outBestMove) {
     for (const auto& move : moves) {
         MoveUndo undo = ApplyMove(board, move);
         board.SetSideToMove(undo.side_to_move == 'w' ? 'b' : 'w');
-        int score = -Negamax(board, depth - 1, -beta, -alpha);
+        uint64_t nodes = 0;
+        uint64_t qnodes = 0;
+        int score = -Negamax(board,
+                             depth - 1,
+                             -beta,
+                             -alpha,
+                             std::chrono::steady_clock::time_point::max(),
+                             nodes,
+                             qnodes);
         UndoMoveApply(board, undo);
 
         if (score > best_score) {
@@ -221,5 +303,67 @@ int SearchBestMove(Board& board, int depth, Move& outBestMove) {
         }
     }
 
+    return best_score;
+}
+
+int SearchBestMoveTimed(Board& board,
+                        int maxDepth,
+                        std::chrono::steady_clock::time_point deadline,
+                        Move& outBestMove,
+                        int& outDepth,
+                        uint64_t& outNodes,
+                        uint64_t& outQNodes) {
+    outNodes = 0;
+    outQNodes = 0;
+    outDepth = 0;
+    int best_score = 0;
+    Move best_move(0, 0);
+
+    for (int depth = 1; depth <= maxDepth; ++depth) {
+        if (TimeUp(deadline)) {
+            break;
+        }
+        auto moves = GenerateLegalMoves(board);
+        if (moves.empty()) {
+            break;
+        }
+        int alpha = std::numeric_limits<int>::min() + 1;
+        int beta = std::numeric_limits<int>::max();
+        int local_best = std::numeric_limits<int>::min();
+        Move local_best_move = moves.front();
+        bool timed_out = false;
+
+        for (const auto& move : moves) {
+            MoveUndo undo = ApplyMove(board, move);
+            board.SetSideToMove(undo.side_to_move == 'w' ? 'b' : 'w');
+            int score = -Negamax(board, depth - 1, -beta, -alpha, deadline, outNodes, outQNodes);
+            UndoMoveApply(board, undo);
+
+            if (score == -kTimeOutScore) {
+                timed_out = true;
+                break;
+            }
+
+            if (score > local_best) {
+                local_best = score;
+                local_best_move = move;
+            }
+            if (score > alpha) {
+                alpha = score;
+            }
+        }
+
+        if (timed_out) {
+            break;
+        }
+
+        best_score = local_best;
+        best_move = local_best_move;
+        outDepth = depth;
+    }
+
+    if (outDepth > 0) {
+        outBestMove = best_move;
+    }
     return best_score;
 }
