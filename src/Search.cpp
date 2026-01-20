@@ -1,5 +1,6 @@
 #include "Search.h"
 
+#include <algorithm>
 #include <limits>
 
 #include "MoveGen.h"
@@ -175,6 +176,36 @@ bool IsCaptureMove(const Board& board, const Move& move) {
     return false;
 }
 
+int CaptureValue(const Board& board, const Move& move) {
+    char target = board.PieceAt(move.to());
+    if (target == '.') {
+        char moved = board.PieceAt(move.from());
+        if ((moved == 'P' || moved == 'p') && move.to() == board.EnPassantSquare()) {
+            return PieceValue('p');
+        }
+        return 0;
+    }
+    return PieceValue(target);
+}
+
+int MoveScore(const Board& board, const Move& move) {
+    if (move.promotion().has_value()) {
+        return 3000 + PieceValue(move.promotion().value());
+    }
+    if (IsCaptureMove(board, move)) {
+        int captured = CaptureValue(board, move);
+        int attacker = PieceValue(board.PieceAt(move.from()));
+        return 2000 + (captured * 10 - attacker);
+    }
+    return 0;
+}
+
+void OrderMoves(const Board& board, std::vector<Move>& moves) {
+    std::stable_sort(moves.begin(), moves.end(), [&](const Move& a, const Move& b) {
+        return MoveScore(board, a) > MoveScore(board, b);
+    });
+}
+
 int Quiescence(Board& board,
                int alpha,
                int beta,
@@ -194,6 +225,7 @@ int Quiescence(Board& board,
     }
 
     auto moves = GenerateLegalMoves(board);
+    OrderMoves(board, moves);
     for (const auto& move : moves) {
         if (!IsCaptureMove(board, move)) {
             continue;
@@ -219,6 +251,7 @@ int Quiescence(Board& board,
 
 int Negamax(Board& board,
             int depth,
+            int ply,
             int alpha,
             int beta,
             std::chrono::steady_clock::time_point deadline,
@@ -233,9 +266,10 @@ int Negamax(Board& board,
     }
 
     auto moves = GenerateLegalMoves(board);
+    OrderMoves(board, moves);
     if (moves.empty()) {
         if (InCheck(board, board.SideToMove() == 'w' ? Color::White : Color::Black)) {
-            return -kCheckmateScore + depth;
+            return -kCheckmateScore + ply;
         }
         return 0;
     }
@@ -244,7 +278,7 @@ int Negamax(Board& board,
     for (const auto& move : moves) {
         MoveUndo undo = ApplyMove(board, move);
         board.SetSideToMove(undo.side_to_move == 'w' ? 'b' : 'w');
-        int score = -Negamax(board, depth - 1, -beta, -alpha, deadline, nodes, qnodes);
+        int score = -Negamax(board, depth - 1, ply + 1, -beta, -alpha, deadline, nodes, qnodes);
         UndoMoveApply(board, undo);
 
         if (score == -kTimeOutScore) {
@@ -271,6 +305,7 @@ int EvaluateMaterial(const Board& board) {
 
 int SearchBestMove(Board& board, int depth, Move& outBestMove) {
     auto moves = GenerateLegalMoves(board);
+    OrderMoves(board, moves);
     if (moves.empty() || depth <= 0) {
         return 0;
     }
@@ -287,6 +322,7 @@ int SearchBestMove(Board& board, int depth, Move& outBestMove) {
         uint64_t qnodes = 0;
         int score = -Negamax(board,
                              depth - 1,
+                             1,
                              -beta,
                              -alpha,
                              std::chrono::steady_clock::time_point::max(),
@@ -323,7 +359,8 @@ int SearchBestMoveTimed(Board& board,
         if (TimeUp(deadline)) {
             break;
         }
-        auto moves = GenerateLegalMoves(board);
+    auto moves = GenerateLegalMoves(board);
+    OrderMoves(board, moves);
         if (moves.empty()) {
             break;
         }
@@ -336,7 +373,7 @@ int SearchBestMoveTimed(Board& board,
         for (const auto& move : moves) {
             MoveUndo undo = ApplyMove(board, move);
             board.SetSideToMove(undo.side_to_move == 'w' ? 'b' : 'w');
-            int score = -Negamax(board, depth - 1, -beta, -alpha, deadline, outNodes, outQNodes);
+            int score = -Negamax(board, depth - 1, 1, -beta, -alpha, deadline, outNodes, outQNodes);
             UndoMoveApply(board, undo);
 
             if (score == -kTimeOutScore) {
