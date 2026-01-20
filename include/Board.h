@@ -20,13 +20,19 @@ public:
     void SetEnPassantSquare(int square);
     const std::string& CastlingRights() const;
     void SetCastlingRights(const std::string& rights);
+    int HalfmoveClock() const;
+    void SetHalfmoveClock(int halfmove);
     uint64_t Hash() const;
     void RecomputeHash();
+#ifdef CHESSENGINE_DEBUG
+    void DebugAssertValid() const;
+#endif
 
 private:
     std::array<char, 64> squares_;
     char side_to_move_;
     std::string castling_rights_;
     int en_passant_square_;
+    int halfmove_clock_;
     uint64_t hash_;
 };

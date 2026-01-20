@@ -13,4 +13,8 @@ int SearchBestMoveTimed(Board& board,
                         Move& outBestMove,
                         int& outDepth,
                         uint64_t& outNodes,
-                        uint64_t& outQNodes);
+                        uint64_t& outQNodes,
+                        bool& outDepth1Completed,
+                        int& outTimedOutDepth,
+                        int& outRootMoveCount);
+void SetSearchDrawContext(int currentPly, int maxPlies, int repetitionCount);

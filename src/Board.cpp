@@ -1,6 +1,7 @@
 #include "Board.h"
 
 #include <cctype>
+#include <cstdlib>
 #include <sstream>
 
 #include "Move.h"
@@ -151,6 +152,7 @@ Board::Board()
       side_to_move_('w'),
       castling_rights_("-"),
       en_passant_square_(-1),
+      halfmove_clock_(0),
       hash_(0) {
     squares_.fill('.');
     RecomputeHash();
@@ -167,8 +169,21 @@ bool Board::LoadFen(const std::string& fen) {
     std::string side_part;
     std::string castling_part;
     std::string en_passant_part;
+    std::string halfmove_part;
     if (!(iss >> board_part >> side_part >> castling_part >> en_passant_part)) {
         return false;
+    }
+    if (iss >> halfmove_part) {
+        try {
+            halfmove_clock_ = std::stoi(halfmove_part);
+            if (halfmove_clock_ < 0) {
+                return false;
+            }
+        } catch (...) {
+            return false;
+        }
+    } else {
+        halfmove_clock_ = 0;
     }
 
     int rank = 7;
@@ -334,6 +349,17 @@ void Board::SetCastlingRights(const std::string& rights) {
     castling_rights_ = normalized;
 }
 
+int Board::HalfmoveClock() const {
+    return halfmove_clock_;
+}
+
+void Board::SetHalfmoveClock(int halfmove) {
+    if (halfmove < 0) {
+        return;
+    }
+    halfmove_clock_ = halfmove;
+}
+
 uint64_t Board::Hash() const {
     return hash_;
 }
@@ -357,3 +383,40 @@ void Board::RecomputeHash() {
         hash_ ^= zobrist_enpassant_file_keys[file];
     }
 }
+
+#ifdef CHESSENGINE_DEBUG
+void Board::DebugAssertValid() const {
+    int white_king = 0;
+    int black_king = 0;
+    for (int i = 0; i < 64; ++i) {
+        if (squares_[i] == 'K') {
+            white_king += 1;
+        } else if (squares_[i] == 'k') {
+            black_king += 1;
+        }
+    }
+    if (white_king != 1 || black_king != 1) {
+        std::cerr << "DEBUG ASSERT: invalid king count\n";
+        std::abort();
+    }
+    if (side_to_move_ != 'w' && side_to_move_ != 'b') {
+        std::cerr << "DEBUG ASSERT: invalid side to move\n";
+        std::abort();
+    }
+    if (en_passant_square_ != -1) {
+        int rank = en_passant_square_ / 8;
+        if (!(rank == 2 || rank == 5)) {
+            std::cerr << "DEBUG ASSERT: invalid en passant square\n";
+            std::abort();
+        }
+    }
+    if (castling_rights_ != "-") {
+        for (char c : castling_rights_) {
+            if (c != 'K' && c != 'Q' && c != 'k' && c != 'q') {
+                std::cerr << "DEBUG ASSERT: invalid castling rights\n";
+                std::abort();
+            }
+        }
+    }
+}
+#endif

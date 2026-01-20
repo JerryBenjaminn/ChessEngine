@@ -1,5 +1,10 @@
 #include "MoveGen.h"
 
+#ifdef CHESSENGINE_DEBUG
+#include <cstdlib>
+#include <iostream>
+#endif
+
 namespace {
 bool IsWhitePiece(char piece) {
     return piece >= 'A' && piece <= 'Z';
@@ -245,6 +250,21 @@ void RemoveCastlingRight(std::string& rights, char right) {
 }  // namespace
 
 MoveUndo ApplyMove(Board& board, const Move& move) {
+#ifdef CHESSENGINE_DEBUG
+    char moving = board.PieceAt(move.from());
+    if (moving == '.' || moving == '\0') {
+        std::cerr << "DEBUG ASSERT: move from empty square\n";
+        std::abort();
+    }
+    if (board.SideToMove() == 'w' && !(moving >= 'A' && moving <= 'Z')) {
+        std::cerr << "DEBUG ASSERT: wrong side to move (white expected)\n";
+        std::abort();
+    }
+    if (board.SideToMove() == 'b' && !(moving >= 'a' && moving <= 'z')) {
+        std::cerr << "DEBUG ASSERT: wrong side to move (black expected)\n";
+        std::abort();
+    }
+#endif
     int from = move.from();
     int to = move.to();
     char moved = board.PieceAt(from);
@@ -252,6 +272,7 @@ MoveUndo ApplyMove(Board& board, const Move& move) {
     char side = board.SideToMove();
     int prev_ep = board.EnPassantSquare();
     std::string prev_castling = board.CastlingRights();
+    int prev_halfmove = board.HalfmoveClock();
     int ep_capture_square = -1;
     char ep_captured = '.';
     bool was_en_passant = false;
@@ -358,6 +379,22 @@ MoveUndo ApplyMove(Board& board, const Move& move) {
         board.SetEnPassantSquare(from - 8);
     }
 
+    if (moved == 'P' || moved == 'p' || captured != '.' || was_en_passant) {
+        board.SetHalfmoveClock(0);
+    } else {
+        board.SetHalfmoveClock(prev_halfmove + 1);
+    }
+
+#ifdef CHESSENGINE_DEBUG
+    uint64_t before = board.Hash();
+    board.RecomputeHash();
+    if (board.Hash() != before) {
+        std::cerr << "DEBUG ASSERT: hash mismatch after apply\n";
+        std::abort();
+    }
+    board.DebugAssertValid();
+#endif
+
     return {from,
             to,
             moved,
@@ -371,7 +408,8 @@ MoveUndo ApplyMove(Board& board, const Move& move) {
             rook_to,
             rook_piece,
             was_castling,
-            prev_castling};
+            prev_castling,
+            prev_halfmove};
 }
 
 void UndoMoveApply(Board& board, const MoveUndo& undo) {
@@ -387,6 +425,16 @@ void UndoMoveApply(Board& board, const MoveUndo& undo) {
     board.SetSideToMove(undo.side_to_move);
     board.SetEnPassantSquare(undo.prev_en_passant);
     board.SetCastlingRights(undo.prev_castling_rights);
+    board.SetHalfmoveClock(undo.prev_halfmove_clock);
+#ifdef CHESSENGINE_DEBUG
+    uint64_t before = board.Hash();
+    board.RecomputeHash();
+    if (board.Hash() != before) {
+        std::cerr << "DEBUG ASSERT: hash mismatch after undo\n";
+        std::abort();
+    }
+    board.DebugAssertValid();
+#endif
 }
 
 bool IsSquareAttacked(const Board& board, int square, Color byColor) {

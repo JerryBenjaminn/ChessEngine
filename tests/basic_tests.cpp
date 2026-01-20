@@ -378,15 +378,15 @@ int main() {
     Board hash_capture_board;
     assert(hash_capture_board.LoadFen(hash_capture_fen));
     auto hash_capture_moves = GenerateLegalMoves(hash_capture_board);
-    bool found_capture = false;
+    bool found_halfmove_capture = false;
     for (const auto& m : hash_capture_moves) {
         if (m.ToUci() == "e4d5") {
             apply_and_undo(hash_capture_board, m);
-            found_capture = true;
+            found_halfmove_capture = true;
             break;
         }
     }
-    assert(found_capture);
+    assert(found_halfmove_capture);
 
     const std::string hash_promo_fen = "8/4P3/8/3b4/8/8/2k5/K7 w - - 0 1";
     Board hash_promo_board;
@@ -429,6 +429,60 @@ int main() {
         }
     }
     assert(found_castle);
+
+    const std::string halfmove_pawn_fen = "4k3/8/8/8/8/8/4P3/4K3 w - - 10 1";
+    Board halfmove_pawn_board;
+    assert(halfmove_pawn_board.LoadFen(halfmove_pawn_fen));
+    auto halfmove_pawn_moves = GenerateLegalMoves(halfmove_pawn_board);
+    bool found_pawn = false;
+    for (const auto& m : halfmove_pawn_moves) {
+        if (m.ToUci() == "e2e3") {
+            MoveUndo undo = ApplyMove(halfmove_pawn_board, m);
+            halfmove_pawn_board.SetSideToMove(undo.side_to_move == 'w' ? 'b' : 'w');
+            assert(halfmove_pawn_board.HalfmoveClock() == 0);
+            UndoMoveApply(halfmove_pawn_board, undo);
+            assert(halfmove_pawn_board.HalfmoveClock() == 10);
+            found_pawn = true;
+            break;
+        }
+    }
+    assert(found_pawn);
+
+    const std::string halfmove_quiet_fen = "4k3/8/8/8/8/8/8/4K3 w - - 10 1";
+    Board halfmove_quiet_board;
+    assert(halfmove_quiet_board.LoadFen(halfmove_quiet_fen));
+    auto halfmove_quiet_moves = GenerateLegalMoves(halfmove_quiet_board);
+    bool found_quiet = false;
+    for (const auto& m : halfmove_quiet_moves) {
+        if (m.ToUci() == "e1e2") {
+            MoveUndo undo = ApplyMove(halfmove_quiet_board, m);
+            halfmove_quiet_board.SetSideToMove(undo.side_to_move == 'w' ? 'b' : 'w');
+            assert(halfmove_quiet_board.HalfmoveClock() == 11);
+            UndoMoveApply(halfmove_quiet_board, undo);
+            assert(halfmove_quiet_board.HalfmoveClock() == 10);
+            found_quiet = true;
+            break;
+        }
+    }
+    assert(found_quiet);
+
+    const std::string halfmove_capture_fen = "4k3/8/8/3p4/4P3/8/8/4K3 w - - 10 1";
+    Board halfmove_capture_board;
+    assert(halfmove_capture_board.LoadFen(halfmove_capture_fen));
+    auto halfmove_capture_moves = GenerateLegalMoves(halfmove_capture_board);
+    bool found_capture = false;
+    for (const auto& m : halfmove_capture_moves) {
+        if (m.ToUci() == "e4d5") {
+            MoveUndo undo = ApplyMove(halfmove_capture_board, m);
+            halfmove_capture_board.SetSideToMove(undo.side_to_move == 'w' ? 'b' : 'w');
+            assert(halfmove_capture_board.HalfmoveClock() == 0);
+            UndoMoveApply(halfmove_capture_board, undo);
+            assert(halfmove_capture_board.HalfmoveClock() == 10);
+            found_capture = true;
+            break;
+        }
+    }
+    assert(found_capture);
 
     TranspositionTable tt(1024);
     tt.Clear();

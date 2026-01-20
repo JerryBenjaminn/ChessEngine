@@ -24,6 +24,7 @@ struct MoveUndo {
     char rook_piece;
     bool was_castling;
     std::string prev_castling_rights;
+    int prev_halfmove_clock;
 };
 
 std::vector<Move> GeneratePseudoLegalMoves(const Board& board);

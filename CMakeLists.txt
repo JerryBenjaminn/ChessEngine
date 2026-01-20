@@ -6,6 +6,8 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+option(CHESSENGINE_DEBUG "Enable debug assertions" OFF)
+
 add_library(chessengine_core
     src/Board.cpp
     src/ConsoleRenderer.cpp
@@ -31,6 +33,12 @@ add_executable(chessengine_tests
 )
 
 target_link_libraries(chessengine_tests PRIVATE chessengine_core)
+
+if(CHESSENGINE_DEBUG)
+    target_compile_definitions(chessengine_core PUBLIC CHESSENGINE_DEBUG=1)
+    target_compile_definitions(chessengine PRIVATE CHESSENGINE_DEBUG=1)
+    target_compile_definitions(chessengine_tests PRIVATE CHESSENGINE_DEBUG=1)
+endif()
 
 enable_testing()
 add_test(NAME chessengine_tests COMMAND chessengine_tests)

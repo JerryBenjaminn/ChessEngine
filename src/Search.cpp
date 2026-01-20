@@ -12,6 +12,9 @@ const int kTimeOutScore = 200000;
 const int kMateThreshold = 99000;
 
 TranspositionTable g_tt(1 << 20);
+int g_current_ply = 0;
+int g_max_plies = -1;
+int g_repetition_count = 0;
 
 bool TimeUp(std::chrono::steady_clock::time_point deadline) {
     return std::chrono::steady_clock::now() >= deadline;
@@ -131,6 +134,23 @@ int PieceValue(char piece) {
     }
 }
 
+int MaterialScore(const Board& board) {
+    int score = 0;
+    for (int i = 0; i < 64; ++i) {
+        char piece = board.PieceAt(i);
+        if (piece == '.' || piece == '\0') {
+            continue;
+        }
+        int value = PieceValue(piece);
+        if (piece >= 'A' && piece <= 'Z') {
+            score += value;
+        } else {
+            score -= value;
+        }
+    }
+    return score;
+}
+
 int PieceSquareValue(char piece, int index) {
     switch (piece) {
         case 'P':
@@ -166,25 +186,129 @@ int DevelopmentBonus(char piece, int index) {
     return 0;
 }
 
+bool IsPassedPawn(const Board& board, int index, char pawn) {
+    int file = index % 8;
+    int rank = index / 8;
+    int start = pawn == 'P' ? rank + 1 : rank - 1;
+    int end = pawn == 'P' ? 7 : 0;
+    int step = pawn == 'P' ? 1 : -1;
+    char enemy_pawn = pawn == 'P' ? 'p' : 'P';
+
+    for (int r = start; pawn == 'P' ? r <= end : r >= end; r += step) {
+        for (int df = -1; df <= 1; ++df) {
+            int f = file + df;
+            if (f < 0 || f > 7) {
+                continue;
+            }
+            int sq = r * 8 + f;
+            if (board.PieceAt(sq) == enemy_pawn) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+int PassedPawnBonus(const Board& board, int index, char pawn) {
+    if (!IsPassedPawn(board, index, pawn)) {
+        return 0;
+    }
+    int rank = index / 8;
+    int advance = pawn == 'P' ? rank : (7 - rank);
+    return 20 + advance * 4;
+}
+
+int RookActivityBonus(int index, char rook) {
+    int rank = index / 8;
+    if (rook == 'R') {
+        return rank == 6 ? 15 : 0;
+    }
+    return rank == 1 ? -15 : 0;
+}
+
+int GamePhase(const Board& board) {
+    int phase = 0;
+    for (int i = 0; i < 64; ++i) {
+        char piece = board.PieceAt(i);
+        switch (piece) {
+            case 'N':
+            case 'n':
+            case 'B':
+            case 'b':
+                phase += 1;
+                break;
+            case 'R':
+            case 'r':
+                phase += 2;
+                break;
+            case 'Q':
+            case 'q':
+                phase += 4;
+                break;
+            default:
+                break;
+        }
+    }
+    if (phase > 24) {
+        phase = 24;
+    }
+    return phase;
+}
+
 int Evaluate(const Board& board) {
     int score = 0;
+    int phase = GamePhase(board);
     for (int i = 0; i < 64; ++i) {
         char piece = board.PieceAt(i);
         if (piece == '.' || piece == '\0') {
             continue;
         }
         if (piece >= 'A' && piece <= 'Z') {
-            score += PieceValue(piece);
-            score += PieceSquareValue(piece, i);
+            int material = PieceValue(piece);
+            score += material;
+            if (piece == 'K') {
+                int mg = kKingTable[i];
+                int eg = -kKingTable[MirrorIndex(i)];
+                score += (mg * phase + eg * (24 - phase)) / 24;
+            } else {
+                score += PieceSquareValue(piece, i);
+            }
             score += DevelopmentBonus(piece, i);
+            if (piece == 'P') {
+                score += PassedPawnBonus(board, i, piece);
+            } else if (piece == 'R') {
+                score += RookActivityBonus(i, piece);
+            }
         } else {
             int mirrored = MirrorIndex(i);
-            score -= PieceValue(piece);
-            score -= PieceSquareValue(static_cast<char>(piece - ('a' - 'A')), mirrored);
+            int material = PieceValue(piece);
+            score -= material;
+            char upper = static_cast<char>(piece - ('a' - 'A'));
+            if (upper == 'K') {
+                int mg = kKingTable[mirrored];
+                int eg = -kKingTable[i];
+                score -= (mg * phase + eg * (24 - phase)) / 24;
+            } else {
+                score -= PieceSquareValue(upper, mirrored);
+            }
             score += DevelopmentBonus(piece, i);
+            if (piece == 'p') {
+                score -= PassedPawnBonus(board, i, piece);
+            } else if (piece == 'r') {
+                score += RookActivityBonus(i, piece);
+            }
         }
     }
     return board.SideToMove() == 'w' ? score : -score;
+}
+
+int DrawScore(const Board& board) {
+    int material = MaterialScore(board);
+    int side_material = board.SideToMove() == 'w' ? material : -material;
+    if (side_material > 0) {
+        return -15;
+    }
+    return 0;
 }
 
 bool IsCaptureMove(const Board& board, const Move& move) {
@@ -239,8 +363,14 @@ int Quiescence(Board& board,
                int ply,
                std::chrono::steady_clock::time_point deadline,
                uint64_t& qnodes) {
+    qnodes += 1;
     if (TimeUp(deadline)) {
         return kTimeOutScore;
+    }
+    if (board.HalfmoveClock() >= 100 ||
+        (g_max_plies >= 0 && g_current_ply + ply >= g_max_plies) ||
+        g_repetition_count >= 3) {
+        return DrawScore(board);
     }
 
     int alpha_orig = alpha;
@@ -251,7 +381,6 @@ int Quiescence(Board& board,
         return FromTTScore(tt_score, ply);
     }
 
-    qnodes += 1;
     int stand_pat = Evaluate(board);
     if (stand_pat >= beta) {
         return beta;
@@ -305,12 +434,21 @@ int Negamax(Board& board,
             std::chrono::steady_clock::time_point deadline,
             uint64_t& nodes,
             uint64_t& qnodes) {
+    nodes += 1;
     if (TimeUp(deadline)) {
         return kTimeOutScore;
     }
-    if (depth == 0) {
-        nodes += 1;
+    if (board.HalfmoveClock() >= 100 ||
+        (g_max_plies >= 0 && g_current_ply + ply >= g_max_plies) ||
+        g_repetition_count >= 3) {
+        return DrawScore(board);
+    }
+    bool in_check = InCheck(board, board.SideToMove() == 'w' ? Color::White : Color::Black);
+    if (depth == 0 && !in_check) {
         return Quiescence(board, alpha, beta, ply, deadline, qnodes);
+    }
+    if (in_check && depth > 0) {
+        depth += 1;
     }
 
     int alpha_orig = alpha;
@@ -419,19 +557,26 @@ int SearchBestMoveTimed(Board& board,
                         Move& outBestMove,
                         int& outDepth,
                         uint64_t& outNodes,
-                        uint64_t& outQNodes) {
+                        uint64_t& outQNodes,
+                        bool& outDepth1Completed,
+                        int& outTimedOutDepth,
+                        int& outRootMoveCount) {
     outNodes = 0;
     outQNodes = 0;
     outDepth = 0;
+    outDepth1Completed = false;
+    outTimedOutDepth = -1;
+    outRootMoveCount = 0;
+    g_repetition_count = 0;
     int best_score = 0;
     Move best_move(0, 0);
 
     for (int depth = 1; depth <= maxDepth; ++depth) {
-        if (TimeUp(deadline)) {
-            break;
+        auto moves = GenerateLegalMoves(board);
+        OrderMoves(board, moves, nullptr);
+        if (depth == 1) {
+            outRootMoveCount = static_cast<int>(moves.size());
         }
-    auto moves = GenerateLegalMoves(board);
-    OrderMoves(board, moves, nullptr);
         if (moves.empty()) {
             break;
         }
@@ -440,6 +585,7 @@ int SearchBestMoveTimed(Board& board,
         int local_best = std::numeric_limits<int>::min();
         Move local_best_move = moves.front();
         bool timed_out = false;
+        int evaluated_moves = 0;
 
         for (const auto& move : moves) {
             MoveUndo undo = ApplyMove(board, move);
@@ -452,6 +598,7 @@ int SearchBestMoveTimed(Board& board,
                 break;
             }
 
+            evaluated_moves += 1;
             if (score > local_best) {
                 local_best = score;
                 local_best_move = move;
@@ -462,16 +609,31 @@ int SearchBestMoveTimed(Board& board,
         }
 
         if (timed_out) {
+            outTimedOutDepth = depth;
+            if (depth == 1 && evaluated_moves > 0) {
+                best_score = local_best;
+                best_move = local_best_move;
+                outDepth = 1;
+            }
             break;
         }
 
         best_score = local_best;
         best_move = local_best_move;
         outDepth = depth;
+        if (depth == 1) {
+            outDepth1Completed = true;
+        }
     }
 
     if (outDepth > 0) {
         outBestMove = best_move;
     }
     return best_score;
+}
+
+void SetSearchDrawContext(int currentPly, int maxPlies, int repetitionCount) {
+    g_current_ply = currentPly;
+    g_max_plies = maxPlies;
+    g_repetition_count = repetitionCount;
 }
