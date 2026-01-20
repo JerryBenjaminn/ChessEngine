@@ -117,5 +117,49 @@ int main() {
     }
     assert(has_capture);
 
+    const std::string pinned_fen = "4r3/8/8/8/8/8/4R3/4K3 w - - 0 1";
+    Board pinned_board;
+    assert(pinned_board.LoadFen(pinned_fen));
+    auto pinned_legal = GenerateLegalMoves(pinned_board);
+    bool has_illegal = false;
+    for (const auto& m : pinned_legal) {
+        if (m.ToUci() == "e2a2") {
+            has_illegal = true;
+            break;
+        }
+    }
+    assert(!has_illegal);
+
+    const std::string king_move_fen = "4k3/8/8/7r/4K3/8/8/8 w - - 0 1";
+    Board king_move_board;
+    assert(king_move_board.LoadFen(king_move_fen));
+    auto king_moves = GenerateLegalMoves(king_move_board);
+    bool has_e4e5 = false;
+    for (const auto& m : king_moves) {
+        if (m.ToUci() == "e4e5") {
+            has_e4e5 = true;
+            break;
+        }
+    }
+    assert(!has_e4e5);
+
+    const std::string check_fen = "4k3/8/8/8/8/8/4r3/4K3 w - - 0 1";
+    Board check_board;
+    assert(check_board.LoadFen(check_fen));
+    assert(InCheck(check_board, Color::White));
+
+    const std::string perft_start_fen =
+        "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w - - 0 1";
+    Board perft_start_board;
+    assert(perft_start_board.LoadFen(perft_start_fen));
+    assert(Perft(perft_start_board, 1) == 20);
+    assert(Perft(perft_start_board, 2) == 400);
+
+    const std::string perft_krk_fen = "4k3/8/8/8/8/8/4R3/4K3 w - - 0 1";
+    Board perft_krk_board;
+    assert(perft_krk_board.LoadFen(perft_krk_fen));
+    assert(Perft(perft_krk_board, 1) == 16);
+    assert(Perft(perft_krk_board, 2) == 66);
+
     return 0;
 }

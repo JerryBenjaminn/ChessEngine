@@ -147,7 +147,156 @@ void AddPawnMoves(const Board& board, std::vector<Move>& moves, int from, char s
         }
     }
 }
+
+Color ColorFromSide(char side) {
+    return side == 'w' ? Color::White : Color::Black;
+}
+
+Color Opposite(Color color) {
+    return color == Color::White ? Color::Black : Color::White;
+}
+
+bool IsColorPiece(char piece, Color color) {
+    return color == Color::White ? IsWhitePiece(piece) : IsBlackPiece(piece);
+}
+
+int FindKingSquare(const Board& board, Color color) {
+    char king = color == Color::White ? 'K' : 'k';
+    for (int i = 0; i < 64; ++i) {
+        if (board.PieceAt(i) == king) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+struct UndoMove {
+    int from;
+    int to;
+    char moved;
+    char captured;
+    char side_to_move;
+};
+
+UndoMove ApplyMove(Board& board, const Move& move) {
+    int from = move.from();
+    int to = move.to();
+    char moved = board.PieceAt(from);
+    char captured = board.PieceAt(to);
+    char side = board.SideToMove();
+    board.SetPieceAt(to, moved);
+    board.SetPieceAt(from, '.');
+    return {from, to, moved, captured, side};
+}
+
+void UndoMoveApply(Board& board, const UndoMove& undo) {
+    board.SetPieceAt(undo.from, undo.moved);
+    board.SetPieceAt(undo.to, undo.captured);
+    board.SetSideToMove(undo.side_to_move);
+}
 }  // namespace
+
+bool IsSquareAttacked(const Board& board, int square, Color byColor) {
+    if (square < 0 || square > 63) {
+        return false;
+    }
+
+    int file = square % 8;
+    int rank = square / 8;
+
+    if (byColor == Color::White) {
+        if (rank > 0 && file > 0 && board.PieceAt((rank - 1) * 8 + (file - 1)) == 'P') {
+            return true;
+        }
+        if (rank > 0 && file < 7 && board.PieceAt((rank - 1) * 8 + (file + 1)) == 'P') {
+            return true;
+        }
+    } else {
+        if (rank < 7 && file > 0 && board.PieceAt((rank + 1) * 8 + (file - 1)) == 'p') {
+            return true;
+        }
+        if (rank < 7 && file < 7 && board.PieceAt((rank + 1) * 8 + (file + 1)) == 'p') {
+            return true;
+        }
+    }
+
+    const int knight_offsets[8][2] = {
+        {1, 2},  {2, 1},  {-1, 2}, {-2, 1},
+        {1, -2}, {2, -1}, {-1, -2}, {-2, -1},
+    };
+    for (const auto& offset : knight_offsets) {
+        int next_file = file + offset[0];
+        int next_rank = rank + offset[1];
+        if (next_file < 0 || next_file >= 8 || next_rank < 0 || next_rank >= 8) {
+            continue;
+        }
+        char piece = board.PieceAt(next_rank * 8 + next_file);
+        if (piece == (byColor == Color::White ? 'N' : 'n')) {
+            return true;
+        }
+    }
+
+    for (int df = -1; df <= 1; ++df) {
+        for (int dr = -1; dr <= 1; ++dr) {
+            if (df == 0 && dr == 0) {
+                continue;
+            }
+            int next_file = file + df;
+            int next_rank = rank + dr;
+            if (next_file < 0 || next_file >= 8 || next_rank < 0 || next_rank >= 8) {
+                continue;
+            }
+            char piece = board.PieceAt(next_rank * 8 + next_file);
+            if (piece == (byColor == Color::White ? 'K' : 'k')) {
+                return true;
+            }
+        }
+    }
+
+    const int rook_dirs[4][2] = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
+    for (const auto& dir : rook_dirs) {
+        int next_file = file + dir[0];
+        int next_rank = rank + dir[1];
+        while (next_file >= 0 && next_file < 8 && next_rank >= 0 && next_rank < 8) {
+            char piece = board.PieceAt(next_rank * 8 + next_file);
+            if (piece != '.') {
+                if (IsColorPiece(piece, byColor) && (piece == 'R' || piece == 'r' || piece == 'Q' || piece == 'q')) {
+                    return true;
+                }
+                break;
+            }
+            next_file += dir[0];
+            next_rank += dir[1];
+        }
+    }
+
+    const int bishop_dirs[4][2] = {{1, 1}, {-1, 1}, {1, -1}, {-1, -1}};
+    for (const auto& dir : bishop_dirs) {
+        int next_file = file + dir[0];
+        int next_rank = rank + dir[1];
+        while (next_file >= 0 && next_file < 8 && next_rank >= 0 && next_rank < 8) {
+            char piece = board.PieceAt(next_rank * 8 + next_file);
+            if (piece != '.') {
+                if (IsColorPiece(piece, byColor) && (piece == 'B' || piece == 'b' || piece == 'Q' || piece == 'q')) {
+                    return true;
+                }
+                break;
+            }
+            next_file += dir[0];
+            next_rank += dir[1];
+        }
+    }
+
+    return false;
+}
+
+bool InCheck(const Board& board, Color color) {
+    int king_square = FindKingSquare(board, color);
+    if (king_square == -1) {
+        return false;
+    }
+    return IsSquareAttacked(board, king_square, Opposite(color));
+}
 
 std::vector<Move> GeneratePseudoLegalMoves(const Board& board) {
     std::vector<Move> moves;
@@ -201,4 +350,41 @@ std::vector<Move> GeneratePseudoLegalMoves(const Board& board) {
         }
     }
     return moves;
+}
+
+std::vector<Move> GenerateLegalMoves(const Board& board) {
+    std::vector<Move> legal;
+    Color side = ColorFromSide(board.SideToMove());
+    auto pseudo = GeneratePseudoLegalMoves(board);
+    Board scratch = board;
+    for (const auto& move : pseudo) {
+        char target = scratch.PieceAt(move.to());
+        if (target == (side == Color::White ? 'k' : 'K')) {
+            continue;
+        }
+        UndoMove undo = ApplyMove(scratch, move);
+        if (!InCheck(scratch, side)) {
+            legal.push_back(move);
+        }
+        UndoMoveApply(scratch, undo);
+    }
+    return legal;
+}
+
+uint64_t Perft(const Board& board, int depth) {
+    if (depth <= 0) {
+        return 1;
+    }
+
+    uint64_t nodes = 0;
+    auto moves = GenerateLegalMoves(board);
+    Board scratch = board;
+    for (const auto& move : moves) {
+        UndoMove undo = ApplyMove(scratch, move);
+        char next_side = undo.side_to_move == 'w' ? 'b' : 'w';
+        scratch.SetSideToMove(next_side);
+        nodes += Perft(scratch, depth - 1);
+        UndoMoveApply(scratch, undo);
+    }
+    return nodes;
 }

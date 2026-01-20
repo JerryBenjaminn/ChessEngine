@@ -174,3 +174,16 @@ char Board::PieceAt(int index) const {
 char Board::SideToMove() const {
     return side_to_move_;
 }
+
+void Board::SetPieceAt(int index, char piece) {
+    if (index < 0 || index > 63) {
+        return;
+    }
+    squares_[index] = piece;
+}
+
+void Board::SetSideToMove(char side) {
+    if (side == 'w' || side == 'b') {
+        side_to_move_ = side;
+    }
+}

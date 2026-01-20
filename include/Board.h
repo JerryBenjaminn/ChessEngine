@@ -13,6 +13,8 @@ public:
 
     char PieceAt(int index) const;
     char SideToMove() const;
+    void SetPieceAt(int index, char piece);
+    void SetSideToMove(char side);
 
 private:
     std::array<char, 64> squares_;
