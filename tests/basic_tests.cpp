@@ -316,12 +316,28 @@ int main() {
     const std::string eval_fen_white = "8/8/8/8/8/8/4Q3/4K3 w - - 0 1";
     Board eval_board_white;
     assert(eval_board_white.LoadFen(eval_fen_white));
-    assert(EvaluateMaterial(eval_board_white) == 900);
+    assert(EvaluateMaterial(eval_board_white) > 0);
 
     const std::string eval_fen_black = "8/8/8/8/8/8/4Q3/4K3 b - - 0 1";
     Board eval_board_black;
     assert(eval_board_black.LoadFen(eval_fen_black));
-    assert(EvaluateMaterial(eval_board_black) == -900);
+    assert(EvaluateMaterial(eval_board_black) < 0);
+
+    const std::string knight_a1_fen = "8/8/8/8/8/8/8/N3K2k w - - 0 1";
+    Board knight_a1_board;
+    assert(knight_a1_board.LoadFen(knight_a1_fen));
+    const std::string knight_d4_fen = "8/8/8/8/3N4/8/8/4K2k w - - 0 1";
+    Board knight_d4_board;
+    assert(knight_d4_board.LoadFen(knight_d4_fen));
+    assert(EvaluateMaterial(knight_d4_board) > EvaluateMaterial(knight_a1_board));
+
+    const std::string bishop_undeveloped_fen = "8/8/8/8/8/8/8/2B1K2k w - - 0 1";
+    Board bishop_undeveloped_board;
+    assert(bishop_undeveloped_board.LoadFen(bishop_undeveloped_fen));
+    const std::string bishop_developed_fen = "8/8/8/8/8/4B3/8/4K2k w - - 0 1";
+    Board bishop_developed_board;
+    assert(bishop_developed_board.LoadFen(bishop_developed_fen));
+    assert(EvaluateMaterial(bishop_developed_board) > EvaluateMaterial(bishop_undeveloped_board));
 
     return 0;
 }
