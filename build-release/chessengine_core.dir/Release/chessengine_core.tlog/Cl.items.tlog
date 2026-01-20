@@ -1,0 +1,7 @@
+E:\ChessEngine\src\Board.cpp;E:\ChessEngine\build-release\chessengine_core.dir\Release\Board.obj
+E:\ChessEngine\src\ConsoleRenderer.cpp;E:\ChessEngine\build-release\chessengine_core.dir\Release\ConsoleRenderer.obj
+E:\ChessEngine\src\MoveGen.cpp;E:\ChessEngine\build-release\chessengine_core.dir\Release\MoveGen.obj
+E:\ChessEngine\src\Move.cpp;E:\ChessEngine\build-release\chessengine_core.dir\Release\Move.obj
+E:\ChessEngine\src\Search.cpp;E:\ChessEngine\build-release\chessengine_core.dir\Release\Search.obj
+E:\ChessEngine\src\TranspositionTable.cpp;E:\ChessEngine\build-release\chessengine_core.dir\Release\TranspositionTable.obj
+E:\ChessEngine\src\OpeningBook.cpp;E:\ChessEngine\build-release\chessengine_core.dir\Release\OpeningBook.obj

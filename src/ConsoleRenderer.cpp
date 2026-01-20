@@ -57,12 +57,33 @@ void WriteWideString(HANDLE handle, const std::wstring& text) {
 
 void RenderBoard(const Board& board, bool useColor) {
 #ifdef _WIN32
+    HANDLE handle = GetStdHandle(STD_OUTPUT_HANDLE);
     if (!useColor) {
-        std::cout << board.ToAscii() << '\n';
+        std::wstring wide;
+        wide.reserve(9 * 16);
+        wide.append(L"  a b c d e f g h\n");
+        for (int rank = 7; rank >= 0; --rank) {
+            wide.push_back(static_cast<wchar_t>(L'0' + (rank + 1)));
+            wide.push_back(L' ');
+            for (int file = 0; file < 8; ++file) {
+                int index = rank * 8 + file;
+                wchar_t symbol = PieceToWideSymbol(board.PieceAt(index));
+                if (symbol == L' ') {
+                    symbol = L'·';
+                }
+                wide.push_back(symbol);
+                if (file < 7) {
+                    wide.push_back(L' ');
+                }
+            }
+            if (rank > 0) {
+                wide.push_back(L'\n');
+            }
+        }
+        WriteWide(handle, wide.c_str(), static_cast<DWORD>(wide.size()));
         return;
     }
 
-    HANDLE handle = GetStdHandle(STD_OUTPUT_HANDLE);
     CONSOLE_SCREEN_BUFFER_INFO info;
     WORD original_attributes = 0;
     if (GetConsoleScreenBufferInfo(handle, &info)) {

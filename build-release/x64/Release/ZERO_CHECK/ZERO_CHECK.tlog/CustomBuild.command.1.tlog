@@ -1,0 +1,10 @@
+^E:\CHESSENGINE\BUILD-RELEASE\CMAKEFILES\31A8259E01A0AFB9E1983902FC9B4C11\GENERATE.STAMP.RULE
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -SE:/ChessEngine -BE:/ChessEngine/build-release --check-stamp-list CMakeFiles/generate.stamp.list --vs-solution-file E:/ChessEngine/build-release/chessengine.sln
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd

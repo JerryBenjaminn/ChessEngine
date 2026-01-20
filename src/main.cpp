@@ -2,6 +2,10 @@
 #include <iostream>
 #include <string>
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 #include "Board.h"
 #include "ConsoleRenderer.h"
 #include "MoveGen.h"
@@ -9,6 +13,10 @@
 #include "Search.h"
 
 int main() {
+#ifdef _WIN32
+    SetConsoleOutputCP(CP_UTF8);
+    SetConsoleCP(CP_UTF8);
+#endif
     const std::string start_fen =
         "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
