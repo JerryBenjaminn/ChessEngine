@@ -12,6 +12,8 @@ add_library(chessengine_core
     src/MoveGen.cpp
     src/Move.cpp
     src/Search.cpp
+    src/TranspositionTable.cpp
+    src/OpeningBook.cpp
 )
 
 target_include_directories(chessengine_core PUBLIC

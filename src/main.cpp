@@ -5,6 +5,7 @@
 #include "Board.h"
 #include "ConsoleRenderer.h"
 #include "MoveGen.h"
+#include "OpeningBook.h"
 #include "Search.h"
 
 int main() {
@@ -16,6 +17,11 @@ int main() {
         std::cerr << "Failed to load FEN.\n";
         return 1;
     }
+
+    int ply_count = 0;
+    const int max_book_plies = 6;
+    bool book_enabled = true;
+    bool expert_mode = false;
 
     while (true) {
         auto legal_moves = GenerateLegalMoves(board);
@@ -49,6 +55,21 @@ int main() {
                     std::cout << '\n';
                     continue;
                 }
+                if (input == "book on") {
+                    book_enabled = true;
+                    std::cout << "Opening book enabled.\n";
+                    continue;
+                }
+                if (input == "book off") {
+                    book_enabled = false;
+                    std::cout << "Opening book disabled.\n";
+                    continue;
+                }
+                if (input == "expert") {
+                    expert_mode = !expert_mode;
+                    std::cout << (expert_mode ? "Expert mode enabled.\n" : "Expert mode disabled.\n");
+                    continue;
+                }
 
                 auto parsed = Move::ParseUci(input);
                 if (!parsed.has_value()) {
@@ -73,19 +94,25 @@ int main() {
 
                 MoveUndo undo = ApplyMove(board, chosen);
                 board.SetSideToMove(undo.side_to_move == 'w' ? 'b' : 'w');
+                ply_count += 1;
                 break;
             }
         } else {
             Move best(0, 0);
-            int depth_reached = 0;
-            uint64_t nodes = 0;
-            uint64_t qnodes = 0;
-            auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(300);
-            int score = SearchBestMoveTimed(board, 3, deadline, best, depth_reached, nodes, qnodes);
-            std::cout << "AI plays: " << best.ToUci() << " (depth " << depth_reached << ", score "
-                      << score << ", nodes " << nodes << ", qnodes " << qnodes << ")\n";
+            if (book_enabled && !expert_mode && GetBookMove(board, legal_moves, ply_count, max_book_plies, best)) {
+                std::cout << "AI plays (book): " << best.ToUci() << '\n';
+            } else {
+                int depth_reached = 0;
+                uint64_t nodes = 0;
+                uint64_t qnodes = 0;
+                auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(300);
+                int score = SearchBestMoveTimed(board, 3, deadline, best, depth_reached, nodes, qnodes);
+                std::cout << "AI plays: " << best.ToUci() << " (depth " << depth_reached
+                          << ", score " << score << ", nodes " << nodes << ", qnodes " << qnodes << ")\n";
+            }
             MoveUndo undo = ApplyMove(board, best);
             board.SetSideToMove(undo.side_to_move == 'w' ? 'b' : 'w');
+            ply_count += 1;
         }
     }
 

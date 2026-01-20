@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <cstdint>
 #include <string>
 
 // Square indexing: 0..63 where a1=0, b1=1, ..., h1=7, a2=8, ..., h8=63.
@@ -19,10 +20,13 @@ public:
     void SetEnPassantSquare(int square);
     const std::string& CastlingRights() const;
     void SetCastlingRights(const std::string& rights);
+    uint64_t Hash() const;
+    void RecomputeHash();
 
 private:
     std::array<char, 64> squares_;
     char side_to_move_;
     std::string castling_rights_;
     int en_passant_square_;
+    uint64_t hash_;
 };

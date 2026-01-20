@@ -1,4 +1,5 @@
 #include <cassert>
+#include <cstdint>
 #include <set>
 #include <sstream>
 #include <vector>
@@ -7,6 +8,7 @@
 #include "MoveGen.h"
 #include "Move.h"
 #include "Search.h"
+#include "TranspositionTable.h"
 
 int main() {
     auto move = Move::ParseUci("e2e4");
@@ -338,6 +340,124 @@ int main() {
     Board bishop_developed_board;
     assert(bishop_developed_board.LoadFen(bishop_developed_fen));
     assert(EvaluateMaterial(bishop_developed_board) > EvaluateMaterial(bishop_undeveloped_board));
+
+    auto apply_and_undo = [](Board& b, const Move& move) {
+        uint64_t start_hash = b.Hash();
+        MoveUndo undo = ApplyMove(b, move);
+        b.SetSideToMove(undo.side_to_move == 'w' ? 'b' : 'w');
+#ifdef HASH_DEBUG
+        uint64_t before = b.Hash();
+        b.RecomputeHash();
+        assert(b.Hash() == before);
+#endif
+        UndoMoveApply(b, undo);
+#ifdef HASH_DEBUG
+        before = b.Hash();
+        b.RecomputeHash();
+        assert(b.Hash() == before);
+#endif
+        assert(b.Hash() == start_hash);
+    };
+
+    const std::string hash_start_fen =
+        "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+    Board hash_start_board;
+    assert(hash_start_board.LoadFen(hash_start_fen));
+    auto hash_start_moves = GenerateLegalMoves(hash_start_board);
+    bool found_start = false;
+    for (const auto& m : hash_start_moves) {
+        if (m.ToUci() == "e2e4") {
+            apply_and_undo(hash_start_board, m);
+            found_start = true;
+            break;
+        }
+    }
+    assert(found_start);
+
+    const std::string hash_capture_fen = "4k3/8/8/3p4/4P3/8/8/4K3 w - - 0 1";
+    Board hash_capture_board;
+    assert(hash_capture_board.LoadFen(hash_capture_fen));
+    auto hash_capture_moves = GenerateLegalMoves(hash_capture_board);
+    bool found_capture = false;
+    for (const auto& m : hash_capture_moves) {
+        if (m.ToUci() == "e4d5") {
+            apply_and_undo(hash_capture_board, m);
+            found_capture = true;
+            break;
+        }
+    }
+    assert(found_capture);
+
+    const std::string hash_promo_fen = "8/4P3/8/3b4/8/8/2k5/K7 w - - 0 1";
+    Board hash_promo_board;
+    assert(hash_promo_board.LoadFen(hash_promo_fen));
+    auto hash_promo_moves = GenerateLegalMoves(hash_promo_board);
+    bool found_promo = false;
+    for (const auto& m : hash_promo_moves) {
+        if (m.ToUci() == "e7e8q") {
+            apply_and_undo(hash_promo_board, m);
+            found_promo = true;
+            break;
+        }
+    }
+    assert(found_promo);
+
+    const std::string hash_ep_fen = "4k3/8/8/3pP3/8/8/8/4K3 w - d6 0 1";
+    Board hash_ep_board;
+    assert(hash_ep_board.LoadFen(hash_ep_fen));
+    auto hash_ep_moves = GenerateLegalMoves(hash_ep_board);
+    bool found_ep = false;
+    for (const auto& m : hash_ep_moves) {
+        if (m.ToUci() == "e5d6") {
+            apply_and_undo(hash_ep_board, m);
+            found_ep = true;
+            break;
+        }
+    }
+    assert(found_ep);
+
+    const std::string hash_castle_fen = "4k3/8/8/8/8/8/8/R3K2R w KQ - 0 1";
+    Board hash_castle_board;
+    assert(hash_castle_board.LoadFen(hash_castle_fen));
+    auto hash_castle_moves = GenerateLegalMoves(hash_castle_board);
+    bool found_castle = false;
+    for (const auto& m : hash_castle_moves) {
+        if (m.ToUci() == "e1g1") {
+            apply_and_undo(hash_castle_board, m);
+            found_castle = true;
+            break;
+        }
+    }
+    assert(found_castle);
+
+    TranspositionTable tt(1024);
+    tt.Clear();
+    Move best(4, 6);
+    tt.Store(1234ULL, 3, 42, Bound::EXACT, &best);
+    int outScore = 0;
+    Move outMove(0, 0);
+    assert(tt.Probe(1234ULL, 3, -100, 100, outScore, outMove));
+    assert(outScore == 42);
+    assert(outMove.ToUci() == "e1g1");
+    assert(tt.Probe(1234ULL, 2, -100, 100, outScore, outMove));
+
+    tt.Store(5555ULL, 2, 50, Bound::LOWER, nullptr);
+    int lowerScore = 0;
+    assert(tt.Probe(5555ULL, 2, -100, 40, lowerScore, outMove));
+    assert(lowerScore == 50);
+    assert(!tt.Probe(5555ULL, 2, -100, 60, lowerScore, outMove));
+
+    tt.Store(6666ULL, 2, -20, Bound::UPPER, nullptr);
+    int upperScore = 0;
+    assert(tt.Probe(6666ULL, 2, -10, 100, upperScore, outMove));
+    assert(upperScore == -20);
+    assert(!tt.Probe(6666ULL, 2, -30, 100, upperScore, outMove));
+
+    tt.Store(7777ULL, 1, 5, Bound::EXACT, nullptr);
+    tt.Store(7777ULL, 4, 9, Bound::EXACT, nullptr);
+    int replaceScore = 0;
+    assert(tt.Probe(7777ULL, 4, -100, 100, replaceScore, outMove));
+    assert(replaceScore == 9);
 
     return 0;
 }

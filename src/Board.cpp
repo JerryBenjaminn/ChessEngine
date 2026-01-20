@@ -6,6 +6,90 @@
 #include "Move.h"
 
 namespace {
+bool zobrist_initialized = false;
+uint64_t zobrist_piece_keys[12][64];
+uint64_t zobrist_castling_keys[16];
+uint64_t zobrist_enpassant_file_keys[8];
+uint64_t zobrist_side_key = 0;
+
+uint64_t SplitMix64(uint64_t& state) {
+    uint64_t z = (state += 0x9E3779B97F4A7C15ULL);
+    z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
+    z = (z ^ (z >> 27)) * 0x94D049BB133111EBULL;
+    return z ^ (z >> 31);
+}
+
+void InitZobrist() {
+    if (zobrist_initialized) {
+        return;
+    }
+    uint64_t seed = 0xC0FFEE1234567890ULL;
+    for (int p = 0; p < 12; ++p) {
+        for (int sq = 0; sq < 64; ++sq) {
+            zobrist_piece_keys[p][sq] = SplitMix64(seed);
+        }
+    }
+    for (int i = 0; i < 16; ++i) {
+        zobrist_castling_keys[i] = SplitMix64(seed);
+    }
+    for (int i = 0; i < 8; ++i) {
+        zobrist_enpassant_file_keys[i] = SplitMix64(seed);
+    }
+    zobrist_side_key = SplitMix64(seed);
+    zobrist_initialized = true;
+}
+
+int PieceIndex(char piece) {
+    switch (piece) {
+        case 'P':
+            return 0;
+        case 'N':
+            return 1;
+        case 'B':
+            return 2;
+        case 'R':
+            return 3;
+        case 'Q':
+            return 4;
+        case 'K':
+            return 5;
+        case 'p':
+            return 6;
+        case 'n':
+            return 7;
+        case 'b':
+            return 8;
+        case 'r':
+            return 9;
+        case 'q':
+            return 10;
+        case 'k':
+            return 11;
+        default:
+            return -1;
+    }
+}
+
+int CastlingMask(const std::string& rights) {
+    if (rights == "-" || rights.empty()) {
+        return 0;
+    }
+    int mask = 0;
+    if (rights.find('K') != std::string::npos) {
+        mask |= 1;
+    }
+    if (rights.find('Q') != std::string::npos) {
+        mask |= 2;
+    }
+    if (rights.find('k') != std::string::npos) {
+        mask |= 4;
+    }
+    if (rights.find('q') != std::string::npos) {
+        mask |= 8;
+    }
+    return mask;
+}
+
 bool IsPieceChar(char c) {
     switch (c) {
         case 'P':
@@ -66,8 +150,10 @@ Board::Board()
     : squares_(),
       side_to_move_('w'),
       castling_rights_("-"),
-      en_passant_square_(-1) {
+      en_passant_square_(-1),
+      hash_(0) {
     squares_.fill('.');
+    RecomputeHash();
 }
 
 bool Board::LoadFen(const std::string& fen) {
@@ -142,6 +228,7 @@ bool Board::LoadFen(const std::string& fen) {
         en_passant_square_ = *square;
     }
 
+    RecomputeHash();
     return true;
 }
 
@@ -179,11 +266,31 @@ void Board::SetPieceAt(int index, char piece) {
     if (index < 0 || index > 63) {
         return;
     }
+    InitZobrist();
+    char old = squares_[index];
+    int old_index = PieceIndex(old);
+    if (old_index >= 0) {
+        hash_ ^= zobrist_piece_keys[old_index][index];
+    }
     squares_[index] = piece;
+    int new_index = PieceIndex(piece);
+    if (new_index >= 0) {
+        hash_ ^= zobrist_piece_keys[new_index][index];
+    }
 }
 
 void Board::SetSideToMove(char side) {
     if (side == 'w' || side == 'b') {
+        if (side_to_move_ == side) {
+            return;
+        }
+        InitZobrist();
+        if (side_to_move_ == 'b') {
+            hash_ ^= zobrist_side_key;
+        }
+        if (side == 'b') {
+            hash_ ^= zobrist_side_key;
+        }
         side_to_move_ = side;
     }
 }
@@ -196,7 +303,19 @@ void Board::SetEnPassantSquare(int square) {
     if (square < -1 || square > 63) {
         return;
     }
+    if (en_passant_square_ == square) {
+        return;
+    }
+    InitZobrist();
+    if (en_passant_square_ != -1) {
+        int old_file = en_passant_square_ % 8;
+        hash_ ^= zobrist_enpassant_file_keys[old_file];
+    }
     en_passant_square_ = square;
+    if (en_passant_square_ != -1) {
+        int new_file = en_passant_square_ % 8;
+        hash_ ^= zobrist_enpassant_file_keys[new_file];
+    }
 }
 
 const std::string& Board::CastlingRights() const {
@@ -204,9 +323,37 @@ const std::string& Board::CastlingRights() const {
 }
 
 void Board::SetCastlingRights(const std::string& rights) {
-    if (rights.empty()) {
-        castling_rights_ = "-";
-    } else {
-        castling_rights_ = rights;
+    InitZobrist();
+    int old_mask = CastlingMask(castling_rights_);
+    std::string normalized = rights.empty() ? "-" : rights;
+    int new_mask = CastlingMask(normalized);
+    if (old_mask != new_mask) {
+        hash_ ^= zobrist_castling_keys[old_mask];
+        hash_ ^= zobrist_castling_keys[new_mask];
+    }
+    castling_rights_ = normalized;
+}
+
+uint64_t Board::Hash() const {
+    return hash_;
+}
+
+void Board::RecomputeHash() {
+    InitZobrist();
+    hash_ = 0;
+    for (int i = 0; i < 64; ++i) {
+        int idx = PieceIndex(squares_[i]);
+        if (idx >= 0) {
+            hash_ ^= zobrist_piece_keys[idx][i];
+        }
+    }
+    if (side_to_move_ == 'b') {
+        hash_ ^= zobrist_side_key;
+    }
+    int mask = CastlingMask(castling_rights_);
+    hash_ ^= zobrist_castling_keys[mask];
+    if (en_passant_square_ != -1) {
+        int file = en_passant_square_ % 8;
+        hash_ ^= zobrist_enpassant_file_keys[file];
     }
 }

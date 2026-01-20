@@ -4,13 +4,37 @@
 #include <limits>
 
 #include "MoveGen.h"
+#include "TranspositionTable.h"
 
 namespace {
 const int kCheckmateScore = 100000;
 const int kTimeOutScore = 200000;
+const int kMateThreshold = 99000;
+
+TranspositionTable g_tt(1 << 20);
 
 bool TimeUp(std::chrono::steady_clock::time_point deadline) {
     return std::chrono::steady_clock::now() >= deadline;
+}
+
+int ToTTScore(int score, int ply) {
+    if (score > kMateThreshold) {
+        return score + ply;
+    }
+    if (score < -kMateThreshold) {
+        return score - ply;
+    }
+    return score;
+}
+
+int FromTTScore(int score, int ply) {
+    if (score > kMateThreshold) {
+        return score - ply;
+    }
+    if (score < -kMateThreshold) {
+        return score + ply;
+    }
+    return score;
 }
 const int kPawnTable[64] = {
     0,   0,   0,   0,   0,   0,   0,   0,
@@ -188,7 +212,10 @@ int CaptureValue(const Board& board, const Move& move) {
     return PieceValue(target);
 }
 
-int MoveScore(const Board& board, const Move& move) {
+int MoveScore(const Board& board, const Move& move, const Move* preferred) {
+    if (preferred != nullptr && move.ToUci() == preferred->ToUci()) {
+        return 100000;
+    }
     if (move.promotion().has_value()) {
         return 3000 + PieceValue(move.promotion().value());
     }
@@ -200,19 +227,28 @@ int MoveScore(const Board& board, const Move& move) {
     return 0;
 }
 
-void OrderMoves(const Board& board, std::vector<Move>& moves) {
+void OrderMoves(const Board& board, std::vector<Move>& moves, const Move* preferred) {
     std::stable_sort(moves.begin(), moves.end(), [&](const Move& a, const Move& b) {
-        return MoveScore(board, a) > MoveScore(board, b);
+        return MoveScore(board, a, preferred) > MoveScore(board, b, preferred);
     });
 }
 
 int Quiescence(Board& board,
                int alpha,
                int beta,
+               int ply,
                std::chrono::steady_clock::time_point deadline,
                uint64_t& qnodes) {
     if (TimeUp(deadline)) {
         return kTimeOutScore;
+    }
+
+    int alpha_orig = alpha;
+    uint64_t key = board.Hash();
+    Move tt_move(0, 0);
+    int tt_score = 0;
+    if (g_tt.Probe(key, 0, ToTTScore(alpha, ply), ToTTScore(beta, ply), tt_score, tt_move)) {
+        return FromTTScore(tt_score, ply);
     }
 
     qnodes += 1;
@@ -225,25 +261,37 @@ int Quiescence(Board& board,
     }
 
     auto moves = GenerateLegalMoves(board);
-    OrderMoves(board, moves);
+    Move hint(0, 0);
+    const Move* hint_ptr = g_tt.PeekBestMove(key, hint) ? &hint : nullptr;
+    OrderMoves(board, moves, hint_ptr);
+    Move best_move(0, 0);
     for (const auto& move : moves) {
         if (!IsCaptureMove(board, move)) {
             continue;
         }
         MoveUndo undo = ApplyMove(board, move);
         board.SetSideToMove(undo.side_to_move == 'w' ? 'b' : 'w');
-        int score = -Quiescence(board, -beta, -alpha, deadline, qnodes);
+        int score = -Quiescence(board, -beta, -alpha, ply + 1, deadline, qnodes);
         UndoMoveApply(board, undo);
 
         if (score == -kTimeOutScore) {
             return kTimeOutScore;
         }
         if (score >= beta) {
+            g_tt.Store(key, 0, ToTTScore(score, ply), Bound::LOWER, &move);
             return beta;
         }
         if (score > alpha) {
             alpha = score;
+            best_move = move;
         }
+    }
+
+    Bound bound = (alpha <= alpha_orig) ? Bound::UPPER : Bound::EXACT;
+    if (best_move.from() != best_move.to()) {
+        g_tt.Store(key, 0, ToTTScore(alpha, ply), bound, &best_move);
+    } else {
+        g_tt.Store(key, 0, ToTTScore(alpha, ply), bound, nullptr);
     }
 
     return alpha;
@@ -262,11 +310,20 @@ int Negamax(Board& board,
     }
     if (depth == 0) {
         nodes += 1;
-        return Quiescence(board, alpha, beta, deadline, qnodes);
+        return Quiescence(board, alpha, beta, ply, deadline, qnodes);
+    }
+
+    int alpha_orig = alpha;
+    uint64_t key = board.Hash();
+    Move tt_move(0, 0);
+    int tt_score = 0;
+    if (g_tt.Probe(key, depth, ToTTScore(alpha, ply), ToTTScore(beta, ply), tt_score, tt_move)) {
+        return FromTTScore(tt_score, ply);
     }
 
     auto moves = GenerateLegalMoves(board);
-    OrderMoves(board, moves);
+    const Move* tt_ptr = g_tt.PeekBestMove(key, tt_move) ? &tt_move : nullptr;
+    OrderMoves(board, moves, tt_ptr);
     if (moves.empty()) {
         if (InCheck(board, board.SideToMove() == 'w' ? Color::White : Color::Black)) {
             return -kCheckmateScore + ply;
@@ -275,6 +332,7 @@ int Negamax(Board& board,
     }
 
     int best = std::numeric_limits<int>::min();
+    Move best_move(0, 0);
     for (const auto& move : moves) {
         MoveUndo undo = ApplyMove(board, move);
         board.SetSideToMove(undo.side_to_move == 'w' ? 'b' : 'w');
@@ -286,12 +344,25 @@ int Negamax(Board& board,
         }
         if (score > best) {
             best = score;
+            best_move = move;
         }
         if (score > alpha) {
             alpha = score;
         }
         if (alpha >= beta) {
+            g_tt.Store(key, depth, ToTTScore(score, ply), Bound::LOWER, &move);
             break;
+        }
+    }
+
+    if (best != std::numeric_limits<int>::min()) {
+        Bound bound = (best <= alpha_orig) ? Bound::UPPER : (best >= beta ? Bound::LOWER : Bound::EXACT);
+        if (best != kTimeOutScore) {
+            if (best_move.from() != best_move.to()) {
+                g_tt.Store(key, depth, ToTTScore(best, ply), bound, &best_move);
+            } else {
+                g_tt.Store(key, depth, ToTTScore(best, ply), bound, nullptr);
+            }
         }
     }
 
@@ -305,7 +376,7 @@ int EvaluateMaterial(const Board& board) {
 
 int SearchBestMove(Board& board, int depth, Move& outBestMove) {
     auto moves = GenerateLegalMoves(board);
-    OrderMoves(board, moves);
+    OrderMoves(board, moves, nullptr);
     if (moves.empty() || depth <= 0) {
         return 0;
     }
@@ -360,7 +431,7 @@ int SearchBestMoveTimed(Board& board,
             break;
         }
     auto moves = GenerateLegalMoves(board);
-    OrderMoves(board, moves);
+    OrderMoves(board, moves, nullptr);
         if (moves.empty()) {
             break;
         }
