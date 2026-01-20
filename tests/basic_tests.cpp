@@ -154,12 +154,54 @@ int main() {
     assert(perft_start_board.LoadFen(perft_start_fen));
     assert(Perft(perft_start_board, 1) == 20);
     assert(Perft(perft_start_board, 2) == 400);
+    assert(Perft(perft_start_board, 3) == 8902);
 
     const std::string perft_krk_fen = "4k3/8/8/8/8/8/4R3/4K3 w - - 0 1";
     Board perft_krk_board;
     assert(perft_krk_board.LoadFen(perft_krk_fen));
     assert(Perft(perft_krk_board, 1) == 16);
     assert(Perft(perft_krk_board, 2) == 66);
+
+    const std::string perft_kqk_fen = "4k3/8/8/8/8/8/4Q3/4K3 w - - 0 1";
+    Board perft_kqk_board;
+    assert(perft_kqk_board.LoadFen(perft_kqk_fen));
+    assert(Perft(perft_kqk_board, 1) == 25);
+    assert(Perft(perft_kqk_board, 2) == 94);
+
+    const std::string promo_quiet_fen = "8/4P3/8/3b4/8/8/2k5/K7 w - - 0 1";
+    Board promo_quiet_board;
+    assert(promo_quiet_board.LoadFen(promo_quiet_fen));
+    auto promo_quiet_moves = GenerateLegalMoves(promo_quiet_board);
+    std::set<std::string> promo_quiet_set;
+    for (const auto& m : promo_quiet_moves) {
+        if (m.from() == SquareFromString("e7").value()) {
+            promo_quiet_set.insert(m.ToUci());
+        }
+    }
+    assert(promo_quiet_set.size() == 4);
+    assert(promo_quiet_set.count("e7e8q") == 1);
+    assert(promo_quiet_set.count("e7e8r") == 1);
+    assert(promo_quiet_set.count("e7e8b") == 1);
+    assert(promo_quiet_set.count("e7e8n") == 1);
+
+    const std::string promo_capture_fen = "3r4/4P3/8/3b4/8/8/2k5/K7 w - - 0 1";
+    Board promo_capture_board;
+    assert(promo_capture_board.LoadFen(promo_capture_fen));
+    auto promo_capture_moves = GenerateLegalMoves(promo_capture_board);
+    std::set<std::string> promo_capture_set;
+    for (const auto& m : promo_capture_moves) {
+        if (m.from() == SquareFromString("e7").value() && m.ToUci().rfind("e7d8", 0) == 0) {
+            promo_capture_set.insert(m.ToUci());
+        }
+    }
+    assert(promo_capture_set.size() == 4);
+    assert(promo_capture_set.count("e7d8q") == 1);
+    assert(promo_capture_set.count("e7d8r") == 1);
+    assert(promo_capture_set.count("e7d8b") == 1);
+    assert(promo_capture_set.count("e7d8n") == 1);
+
+    assert(Perft(promo_quiet_board, 1) == 4);
+    assert(Perft(promo_quiet_board, 2) == 76);
 
     return 0;
 }

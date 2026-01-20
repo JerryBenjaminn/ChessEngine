@@ -23,8 +23,8 @@ bool IsEnemy(char piece, char side) {
     return IsWhitePiece(piece);
 }
 
-void AddMove(std::vector<Move>& moves, int from, int to) {
-    moves.emplace_back(from, to);
+void AddMove(std::vector<Move>& moves, int from, int to, std::optional<char> promotion = std::nullopt) {
+    moves.emplace_back(from, to, promotion);
 }
 
 void AddSlidingMoves(const Board& board,
@@ -102,7 +102,14 @@ void AddPawnMoves(const Board& board, std::vector<Move>& moves, int from, char s
     if (side == 'w') {
         int forward = from + 8;
         if (rank < 7 && board.PieceAt(forward) == '.') {
-            AddMove(moves, from, forward);
+            if (rank == 6) {
+                AddMove(moves, from, forward, 'q');
+                AddMove(moves, from, forward, 'r');
+                AddMove(moves, from, forward, 'b');
+                AddMove(moves, from, forward, 'n');
+            } else {
+                AddMove(moves, from, forward);
+            }
             if (rank == 1) {
                 int double_forward = from + 16;
                 if (board.PieceAt(double_forward) == '.') {
@@ -113,19 +120,40 @@ void AddPawnMoves(const Board& board, std::vector<Move>& moves, int from, char s
         if (file > 0) {
             int capture_left = from + 7;
             if (rank < 7 && IsEnemy(board.PieceAt(capture_left), side)) {
-                AddMove(moves, from, capture_left);
+                if (rank == 6) {
+                    AddMove(moves, from, capture_left, 'q');
+                    AddMove(moves, from, capture_left, 'r');
+                    AddMove(moves, from, capture_left, 'b');
+                    AddMove(moves, from, capture_left, 'n');
+                } else {
+                    AddMove(moves, from, capture_left);
+                }
             }
         }
         if (file < 7) {
             int capture_right = from + 9;
             if (rank < 7 && IsEnemy(board.PieceAt(capture_right), side)) {
-                AddMove(moves, from, capture_right);
+                if (rank == 6) {
+                    AddMove(moves, from, capture_right, 'q');
+                    AddMove(moves, from, capture_right, 'r');
+                    AddMove(moves, from, capture_right, 'b');
+                    AddMove(moves, from, capture_right, 'n');
+                } else {
+                    AddMove(moves, from, capture_right);
+                }
             }
         }
     } else {
         int forward = from - 8;
         if (rank > 0 && board.PieceAt(forward) == '.') {
-            AddMove(moves, from, forward);
+            if (rank == 1) {
+                AddMove(moves, from, forward, 'q');
+                AddMove(moves, from, forward, 'r');
+                AddMove(moves, from, forward, 'b');
+                AddMove(moves, from, forward, 'n');
+            } else {
+                AddMove(moves, from, forward);
+            }
             if (rank == 6) {
                 int double_forward = from - 16;
                 if (board.PieceAt(double_forward) == '.') {
@@ -136,13 +164,27 @@ void AddPawnMoves(const Board& board, std::vector<Move>& moves, int from, char s
         if (file > 0) {
             int capture_left = from - 9;
             if (rank > 0 && IsEnemy(board.PieceAt(capture_left), side)) {
-                AddMove(moves, from, capture_left);
+                if (rank == 1) {
+                    AddMove(moves, from, capture_left, 'q');
+                    AddMove(moves, from, capture_left, 'r');
+                    AddMove(moves, from, capture_left, 'b');
+                    AddMove(moves, from, capture_left, 'n');
+                } else {
+                    AddMove(moves, from, capture_left);
+                }
             }
         }
         if (file < 7) {
             int capture_right = from - 7;
             if (rank > 0 && IsEnemy(board.PieceAt(capture_right), side)) {
-                AddMove(moves, from, capture_right);
+                if (rank == 1) {
+                    AddMove(moves, from, capture_right, 'q');
+                    AddMove(moves, from, capture_right, 'r');
+                    AddMove(moves, from, capture_right, 'b');
+                    AddMove(moves, from, capture_right, 'n');
+                } else {
+                    AddMove(moves, from, capture_right);
+                }
             }
         }
     }
@@ -184,7 +226,13 @@ UndoMove ApplyMove(Board& board, const Move& move) {
     char moved = board.PieceAt(from);
     char captured = board.PieceAt(to);
     char side = board.SideToMove();
-    board.SetPieceAt(to, moved);
+    if (move.promotion().has_value()) {
+        char promo = move.promotion().value();
+        char promoted_piece = side == 'w' ? static_cast<char>(promo - ('a' - 'A')) : promo;
+        board.SetPieceAt(to, promoted_piece);
+    } else {
+        board.SetPieceAt(to, moved);
+    }
     board.SetPieceAt(from, '.');
     return {from, to, moved, captured, side};
 }
