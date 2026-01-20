@@ -12,6 +12,7 @@ public:
     std::string ToAscii() const;
 
     char PieceAt(int index) const;
+    char SideToMove() const;
 
 private:
     std::array<char, 64> squares_;

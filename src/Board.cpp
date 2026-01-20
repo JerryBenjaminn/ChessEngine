@@ -170,3 +170,7 @@ char Board::PieceAt(int index) const {
     }
     return squares_[index];
 }
+
+char Board::SideToMove() const {
+    return side_to_move_;
+}

@@ -9,6 +9,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 add_library(chessengine_core
     src/Board.cpp
     src/ConsoleRenderer.cpp
+    src/MoveGen.cpp
     src/Move.cpp
 )
 
