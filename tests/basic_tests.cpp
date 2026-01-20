@@ -6,6 +6,7 @@
 #include "Board.h"
 #include "MoveGen.h"
 #include "Move.h"
+#include "Search.h"
 
 int main() {
     auto move = Move::ParseUci("e2e4");
@@ -311,6 +312,16 @@ int main() {
 
     assert(Perft(castle_board, 1) == 26);
     assert(Perft(castle_board, 2) == 112);
+
+    const std::string eval_fen_white = "8/8/8/8/8/8/4Q3/4K3 w - - 0 1";
+    Board eval_board_white;
+    assert(eval_board_white.LoadFen(eval_fen_white));
+    assert(EvaluateMaterial(eval_board_white) == 900);
+
+    const std::string eval_fen_black = "8/8/8/8/8/8/4Q3/4K3 b - - 0 1";
+    Board eval_board_black;
+    assert(eval_board_black.LoadFen(eval_fen_black));
+    assert(EvaluateMaterial(eval_board_black) == -900);
 
     return 0;
 }

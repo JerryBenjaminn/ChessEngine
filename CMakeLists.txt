@@ -11,6 +11,7 @@ add_library(chessengine_core
     src/ConsoleRenderer.cpp
     src/MoveGen.cpp
     src/Move.cpp
+    src/Search.cpp
 )
 
 target_include_directories(chessengine_core PUBLIC
