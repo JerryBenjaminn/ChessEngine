@@ -89,5 +89,33 @@ int main() {
     }
     assert(a1_count == 0);
 
+    const std::string black_pawn_fen = "8/4p3/8/8/8/8/8/8 b - - 0 1";
+    Board black_pawn_board;
+    assert(black_pawn_board.LoadFen(black_pawn_fen));
+    auto black_moves = GeneratePseudoLegalMoves(black_pawn_board);
+    int e7 = SquareFromString("e7").value();
+    bool has_e7e6 = false;
+    for (const auto& m : black_moves) {
+        if (m.from() == e7 && m.ToUci() == "e7e6") {
+            has_e7e6 = true;
+            break;
+        }
+    }
+    assert(has_e7e6);
+
+    const std::string black_capture_fen = "8/8/8/4p3/3P1P2/8/8/8 b - - 0 1";
+    Board black_capture_board;
+    assert(black_capture_board.LoadFen(black_capture_fen));
+    auto capture_moves = GeneratePseudoLegalMoves(black_capture_board);
+    int e5 = SquareFromString("e5").value();
+    bool has_capture = false;
+    for (const auto& m : capture_moves) {
+        if (m.from() == e5 && (m.ToUci() == "e5d4" || m.ToUci() == "e5f4")) {
+            has_capture = true;
+            break;
+        }
+    }
+    assert(has_capture);
+
     return 0;
 }
